@@ -20,6 +20,8 @@ class DetSolver(BaseSolver):
         print("Start training")
         self.train()
 
+        patience = 0
+        best_epoch = -1
         args = self.cfg 
         
         n_parameters = sum(p.numel() for p in self.model.parameters() if p.requires_grad)
@@ -40,13 +42,13 @@ class DetSolver(BaseSolver):
 
             self.lr_scheduler.step()
             
-            if self.output_dir:
-                checkpoint_paths = [self.output_dir / 'checkpoint.pth']
-                # extra checkpoint before LR drop and every 100 epochs
-                if (epoch + 1) % args.checkpoint_step == 0:
-                    checkpoint_paths.append(self.output_dir / f'checkpoint{epoch:04}.pth')
-                for checkpoint_path in checkpoint_paths:
-                    dist.save_on_master(self.state_dict(epoch), checkpoint_path)
+            # if self.output_dir:
+            #     checkpoint_paths = [self.output_dir / 'checkpoint.pth']
+            #     # extra checkpoint before LR drop and every 100 epochs
+            #     if (epoch + 1) % args.checkpoint_step == 0:
+            #         checkpoint_paths.append(self.output_dir / f'checkpoint{epoch:04}.pth')
+            #     for checkpoint_path in checkpoint_paths:
+            #         dist.save_on_master(self.state_dict(epoch), checkpoint_path)
 
             module = self.ema.module if self.ema else self.model
             test_stats, coco_evaluator = evaluate(
@@ -73,16 +75,30 @@ class DetSolver(BaseSolver):
                 with (self.output_dir / "log.txt").open("a") as f:
                     f.write(json.dumps(log_stats) + "\n")
 
-                # for evaluation logs
-                if coco_evaluator is not None:
-                    (self.output_dir / 'eval').mkdir(exist_ok=True)
-                    if "bbox" in coco_evaluator.coco_eval:
-                        filenames = ['latest.pth']
-                        if epoch % 50 == 0:
-                            filenames.append(f'{epoch:03}.pth')
-                        for name in filenames:
-                            torch.save(coco_evaluator.coco_eval["bbox"].eval,
-                                    self.output_dir / "eval" / name)
+                # # for evaluation logs
+                # if coco_evaluator is not None:
+                #     (self.output_dir / 'eval').mkdir(exist_ok=True)
+                #     if "bbox" in coco_evaluator.coco_eval:
+                #         filenames = ['latest.pth']
+                #         if epoch % 50 == 0:
+                #             filenames.append(f'{epoch:03}.pth')
+                #         for name in filenames:
+                #             torch.save(coco_evaluator.coco_eval["bbox"].eval,
+                #                     self.output_dir / "eval" / name)
+
+            # save best checkpoint
+            if self.output_dir:
+                if best_stat['epoch'] != best_epoch:
+                    best_epoch = best_stat['epoch']
+                    dist.save_on_master(self.state_dict(epoch), self.output_dir / f'best.pth')
+                    patience = 0
+                    print(f"Best epoch updated! -----> {best_epoch}")
+                else:
+                    patience += 1
+                    print(f"Remaining patience is {args.yaml_cfg['patience'] - patience}")
+                    if patience >= args.yaml_cfg['patience']:
+                        print("stop training...")
+                        break
 
         total_time = time.time() - start_time
         total_time_str = str(datetime.timedelta(seconds=int(total_time)))
