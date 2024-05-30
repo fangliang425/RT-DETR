@@ -281,9 +281,16 @@ class HybridEncoder(nn.Module):
         return torch.concat([out_w.sin(), out_w.cos(), out_h.sin(), out_h.cos()], dim=1)[None, :, :]
 
     def forward(self, feats):
-        assert len(feats) == len(self.in_channels)
-        proj_feats = [self.input_proj[i](feat) for i, feat in enumerate(feats)]
-        
+        if len(feats) != len(self.in_channels):
+            raise ValueError(f"Received {len(feats)} feature maps from backbone, while expecting {len(self.in_channels)}")
+
+        try:
+            proj_feats = [self.input_proj[i](feat) for i, feat in enumerate(feats)]
+        except:
+            for i in range(len(feats)):
+                print(f"Level {i}: backbone shape {feats[i].shape}; expected channels: {self.in_channels[i]}")
+            raise ValueError(f"Invalid feature maps.")
+
         # encoder
         if self.num_encoder_layers > 0:
             for i, enc_ind in enumerate(self.use_encoder_idx):

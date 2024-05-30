@@ -15,6 +15,7 @@ __all__ = ['PResNet']
 
 
 ResNet_cfg = {
+    9:  [1, 1, 1, 1],
     18: [2, 2, 2, 2],
     34: [3, 4, 6, 3],
     50: [3, 4, 6, 3],
@@ -167,7 +168,11 @@ class PResNet(nn.Module):
             (_name, ConvNormLayer(c_in, c_out, k, s, act=act)) for c_in, c_out, k, s, _name in conv_def
         ]))
 
-        ch_out_list = [64, 128, 256, 512]
+        if depth == 9:
+            ch_out_list = [32, 64, 96, 128]
+        else:
+            ch_out_list = [64, 128, 256, 512]
+
         block = BottleNeck if depth >= 50 else BasicBlock
 
         _out_channels = [block.expansion * v for v in ch_out_list]
@@ -194,10 +199,13 @@ class PResNet(nn.Module):
             self._freeze_norm(self)
 
         if pretrained:
-            state = torch.hub.load_state_dict_from_url(donwload_url[depth])
-            self.load_state_dict(state)
-            print(f'Load PResNet{depth} state_dict')
-            
+            try:
+                state = torch.hub.load_state_dict_from_url(donwload_url[depth])
+                self.load_state_dict(state)
+                print(f'Load PResNet{depth} state_dict')
+            except:
+                print(f"Warning: failed to download pretrained weights")
+                
     def _freeze_parameters(self, m: nn.Module):
         for p in m.parameters():
             p.requires_grad = False

@@ -10,6 +10,7 @@ import os
 import sys
 import pathlib
 from typing import Iterable
+import tqdm
 
 import torch
 import torch.amp 
@@ -27,10 +28,12 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
     metric_logger.add_meter('lr', SmoothedValue(window_size=1, fmt='{value:.6f}'))
     # metric_logger.add_meter('class_error', SmoothedValue(window_size=1, fmt='{value:.2f}'))
     header = 'Epoch: [{}]'.format(epoch)
-    print_freq = kwargs.get('print_freq', 10)
+    print_freq = 0 # kwargs.get('print_freq', 10)
     
     ema = kwargs.get('ema', None)
     scaler = kwargs.get('scaler', None)
+
+    pbar = tqdm.tqdm(total = len(data_loader))
 
     for samples, targets in metric_logger.log_every(data_loader, print_freq, header):
         samples = samples.to(device)
@@ -81,10 +84,14 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
 
         metric_logger.update(loss=loss_value, **loss_dict_reduced)
         metric_logger.update(lr=optimizer.param_groups[0]["lr"])
+        pbar.update(1)
+        pbar.set_description(f"Epoch {epoch+1}: Loss: {loss_value:.3f}")
+
+    pbar.close()
 
     # gather the stats from all processes
     metric_logger.synchronize_between_processes()
-    print("Averaged stats:", metric_logger)
+    #print("Averaged stats:", metric_logger)
     return {k: meter.global_avg for k, meter in metric_logger.meters.items()}
 
 
@@ -111,7 +118,9 @@ def evaluate(model: torch.nn.Module, criterion: torch.nn.Module, postprocessors,
     #         output_dir=os.path.join(output_dir, "panoptic_eval"),
     #     )
 
-    for samples, targets in metric_logger.log_every(data_loader, 10, header):
+    pbar = tqdm.tqdm(total = len(data_loader))
+
+    for samples, targets in metric_logger.log_every(data_loader, 0, header):
         samples = samples.to(device)
         targets = [{k: v.to(device) for k, v in t.items()} for t in targets]
 
@@ -153,6 +162,9 @@ def evaluate(model: torch.nn.Module, criterion: torch.nn.Module, postprocessors,
         #         res_pano[i]["image_id"] = image_id
         #         res_pano[i]["file_name"] = file_name
         #     panoptic_evaluator.update(res_pano)
+
+        pbar.update(1)
+        pbar.set_description(f"Testing")
 
     # gather the stats from all processes
     metric_logger.synchronize_between_processes()
